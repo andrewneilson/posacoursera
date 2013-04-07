@@ -60,8 +60,8 @@ class Pingpong extends Thread {
     }
 
     public synchronized void hitBall() throws InterruptedException {
-        while(turn.get() != name) {
-            ball.release();
+        if(turn.get() != name) {
+            yield();
         }
 
         ball.acquire();
