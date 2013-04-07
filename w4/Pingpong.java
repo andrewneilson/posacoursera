@@ -48,7 +48,7 @@ class Pingpong extends Thread {
         }
     }
 
-    private static Object ball = new Object();
+    private static Semaphore ball = new Semaphore(1);
     private Player name;
     private AtomicReference<Player> turn;
     private int turns;
@@ -59,22 +59,20 @@ class Pingpong extends Thread {
         this.turns = turns;
     }
 
-    public void hitBall() throws InterruptedException {
+    public synchronized void hitBall() throws InterruptedException {
         while(turn.get() != name) {
-            synchronized(ball) {
-                ball.wait();
-            }
+            ball.release();
         }
 
-        synchronized(ball) {
-            System.out.println(name);
-            if(name == Player.PING)
-                turn.set(Player.PONG);
-            else
-                turn.set(Player.PING);
+        ball.acquire();
 
-            ball.notifyAll();
-        }
+        System.out.println(name);
+        if(name == Player.PING)
+            turn.set(Player.PONG);
+        else
+            turn.set(Player.PING);
+
+        ball.release();
     }
 
     public void run() {
@@ -95,9 +93,6 @@ class Pingpong extends Thread {
         System.out.println("Ready... Set... Go!");
         ping.start();
         pong.start();
-        synchronized(ball) {
-            ball.notifyAll();
-        }
 
         try {
             ping.join();
