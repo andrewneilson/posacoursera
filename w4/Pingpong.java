@@ -1,5 +1,5 @@
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.Condition;
@@ -36,22 +36,29 @@ import java.util.concurrent.locks.Condition;
  * and contain code in a single file.  Someone should be able to run something like “javac Program.java” and “java Program”
  * and your program should successfully run!
  * */
-class Pingpong implements Runnable {
+abstract class Pingpong implements Runnable {
     public static void main(String[] args) {
-        ReentrantLock ball = new ReentrantLock();
-        Condition pingTurn = ball.newCondition();
-        Condition pongTurn = ball.newCondition();
+        AtomicBoolean gameLock = new AtomicBoolean();
+        AtomicBoolean pongTurn = new AtomicBoolean();
         ExecutorService game = Executors.newFixedThreadPool(2);
 
         // prep the two players for 3 turns
-        ball.lock();
-        game.execute(new Pingpong(1, ball, pongTurn, pingTurn, "Ping!"));
-        game.execute(new Pingpong(1, ball, pingTurn, pongTurn, "Pong!"));
+        Pingpong ping = newPing(2, pongTurn, gameLock);
+        Pingpong pong = newPong(2, pongTurn, gameLock);
+        game.execute(ping);
+        game.execute(pong);
 
         // start game with Ping going first and wait up to three seconds for it to finish.
         System.out.println("Ready... Set... Go!");
-        pingTurn.signal();
-        ball.unlock();
+        synchronized(pongTurn) {
+            pongTurn.set(false);
+            pongTurn.notifyAll(); // TODO: <-- race condition :( Need to sort out who gets to go first.
+        }
+        synchronized(gameLock) {
+            gameLock.set(false);
+            gameLock.notifyAll();
+        }
+
         try {
             game.awaitTermination(3, TimeUnit.SECONDS);
         } catch (InterruptedException ex) {
@@ -60,28 +67,60 @@ class Pingpong implements Runnable {
         System.out.println("Done!");
     }
 
-    private int turns;
-    private Lock ball;
-    private Condition myTurn;
-    private Condition theirTurn;
-    private String name;
+    public static Pingpong newPing(int turns, AtomicBoolean pongTurn, AtomicBoolean game) {
+        return new Pingpong(turns, pongTurn, game) {
+            protected void hitBall() throws InterruptedException {
+                synchronized(pongTurn) {
+                    while(pongTurn.get())
+                        pongTurn.wait();
+                }
+
+                synchronized(game) {
+                    while(!game.get())
+                        game.wait();
+                }
+
+                System.out.println("Ping!");
+                synchronized(pongTurn) {
+                    pongTurn.compareAndSet(false, true);
+                    pongTurn.notify();
+                }
+            }
+        };
+    }
+
+    public static Pingpong newPong(int turns, AtomicBoolean pongTurn, AtomicBoolean game) {
+        return new Pingpong(turns, pongTurn, game) {
+            protected void hitBall() throws InterruptedException {
+                synchronized(pongTurn) {
+                    while(!pongTurn.get())
+                        pongTurn.wait();
+                    pongTurn.compareAndSet(true, false);
+                    System.out.println("Pong!");
+                    pongTurn.notify();
+                }
+            }
+        };
+    }
+
+    protected int turns;
+    protected AtomicBoolean pongTurn;
+    protected AtomicBoolean game;
 
     /**
      * A 'Pingpong' instance represents one player in the pingpong game.
      * Here is the scenario:
      *
      * The player is prepared to play a certain number of turns and will
-     * only hit the ball when it is his/her turn. Only one player may hit
-     * the ball at a time.
+     * only hit the pongTurn when it is his/her turn. Only one player may hit
+     * the pongTurn at a time.
      *
-     * When the player hits a ball, they yell out their name.
+     * When the player hits a pongTurn, they yell out their name.
      * */
-    public Pingpong(int turns, Lock ball, Condition theirTurn, Condition myTurn, String name) {
+    public Pingpong(int turns, AtomicBoolean pongTurn, AtomicBoolean game) {
         this.turns = turns;
-        this.name = name;
-        this.ball = ball;
-        this.myTurn = myTurn;
-        this.theirTurn = theirTurn;
+        this.pongTurn = pongTurn;
+        this.game = game;
     }
 
     /**
@@ -91,9 +130,7 @@ class Pingpong implements Runnable {
     public void run() {
         for(int i=0; i < turns; i++) {
             try {
-                System.err.println(name + " waiting to hit teh ball");
                 hitBall();
-                System.err.println(name + " should be done w the ball");
             } catch (InterruptedException ex) {
                 ex.printStackTrace();
             }
@@ -103,17 +140,5 @@ class Pingpong implements Runnable {
     /**
      * Hit the ball back to the opponent.
      * */
-    private void hitBall() throws InterruptedException {
-        ball.lock();
-        System.err.println(name + " has the ball");
-        try {
-        System.err.println(name + " waiting for their turn");
-            myTurn.await();
-            System.out.println(name);
-            theirTurn.signal();
-        System.err.println(name + " signaled the other player");
-        } finally {
-            ball.unlock();
-        }
-    }
+    protected abstract void hitBall() throws InterruptedException;
 }
