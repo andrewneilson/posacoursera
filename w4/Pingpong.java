@@ -1,8 +1,5 @@
 import java.util.concurrent.*;
-import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.ReentrantLock;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.Condition;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * You are to design a simple Java program where you create two threads, Ping and Pong, to alternately
@@ -36,109 +33,79 @@ import java.util.concurrent.locks.Condition;
  * and contain code in a single file.  Someone should be able to run something like “javac Program.java” and “java Program”
  * and your program should successfully run!
  * */
-abstract class Pingpong implements Runnable {
-    public static void main(String[] args) {
-        AtomicBoolean gameLock = new AtomicBoolean();
-        AtomicBoolean pongTurn = new AtomicBoolean();
-        ExecutorService game = Executors.newFixedThreadPool(2);
+class Pingpong extends Thread {
+    public enum Player {
+        PING("Ping!"), PONG("Pong!");
+        private String name;
 
-        // prep the two players for 3 turns
-        Pingpong ping = newPing(2, pongTurn, gameLock);
-        Pingpong pong = newPong(2, pongTurn, gameLock);
-        game.execute(ping);
-        game.execute(pong);
-
-        // start game with Ping going first and wait up to three seconds for it to finish.
-        System.out.println("Ready... Set... Go!");
-        synchronized(pongTurn) {
-            pongTurn.set(false);
-            pongTurn.notifyAll(); // TODO: <-- race condition :( Need to sort out who gets to go first.
+        Player(String name) {
+            this.name = name;
         }
-        synchronized(gameLock) {
-            gameLock.set(false);
-            gameLock.notifyAll();
+
+        @Override
+        public String toString() {
+            return this.name;
+        }
+    }
+
+    private static Object ball = new Object();
+    private Player name;
+    private AtomicReference<Player> turn;
+    private int turns;
+
+    public Pingpong(Player name, int turns, AtomicReference<Player> turn) {
+        this.name = name;
+        this.turn = turn;
+        this.turns = turns;
+    }
+
+    public void hitBall() throws InterruptedException {
+        while(turn.get() != name) {
+            synchronized(ball) {
+                ball.wait();
+            }
+        }
+
+        synchronized(ball) {
+            System.out.println(name);
+            if(name == Player.PING)
+                turn.set(Player.PONG);
+            else
+                turn.set(Player.PING);
+
+            ball.notifyAll();
+        }
+    }
+
+    public void run() {
+        try {
+            for(int i=0; i < turns; i++) {
+                hitBall();
+            }
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        }
+    }
+
+    public static void main(String[] args) {
+        AtomicReference<Player> turn = new AtomicReference<Player>(Player.PING);
+        Pingpong ping = new Pingpong(Player.PING, 3, turn);
+        Pingpong pong = new Pingpong(Player.PONG, 3, turn);
+
+        System.out.println("Ready... Set... Go!");
+        ping.start();
+        pong.start();
+        synchronized(ball) {
+            ball.notifyAll();
         }
 
         try {
-            game.awaitTermination(3, TimeUnit.SECONDS);
-        } catch (InterruptedException ex) {
-            ex.printStackTrace();
-        }
-        System.out.println("Done!");
-    }
-
-    public static Pingpong newPing(int turns, AtomicBoolean pongTurn, AtomicBoolean game) {
-        return new Pingpong(turns, pongTurn, game) {
-            protected void hitBall() throws InterruptedException {
-                synchronized(pongTurn) {
-                    while(pongTurn.get())
-                        pongTurn.wait();
-                }
-
-                synchronized(game) {
-                    while(!game.get())
-                        game.wait();
-                }
-
-                System.out.println("Ping!");
-                synchronized(pongTurn) {
-                    pongTurn.compareAndSet(false, true);
-                    pongTurn.notify();
-                }
-            }
-        };
-    }
-
-    public static Pingpong newPong(int turns, AtomicBoolean pongTurn, AtomicBoolean game) {
-        return new Pingpong(turns, pongTurn, game) {
-            protected void hitBall() throws InterruptedException {
-                synchronized(pongTurn) {
-                    while(!pongTurn.get())
-                        pongTurn.wait();
-                    pongTurn.compareAndSet(true, false);
-                    System.out.println("Pong!");
-                    pongTurn.notify();
-                }
-            }
-        };
-    }
-
-    protected int turns;
-    protected AtomicBoolean pongTurn;
-    protected AtomicBoolean game;
-
-    /**
-     * A 'Pingpong' instance represents one player in the pingpong game.
-     * Here is the scenario:
-     *
-     * The player is prepared to play a certain number of turns and will
-     * only hit the pongTurn when it is his/her turn. Only one player may hit
-     * the pongTurn at a time.
-     *
-     * When the player hits a pongTurn, they yell out their name.
-     * */
-    public Pingpong(int turns, AtomicBoolean pongTurn, AtomicBoolean game) {
-        this.turns = turns;
-        this.pongTurn = pongTurn;
-        this.game = game;
-    }
-
-    /**
-     * Attempt to play a certain number of turns. Wait for the
-     * ball to be hit back to us before attempting to hit it.
-     * */
-    public void run() {
-        for(int i=0; i < turns; i++) {
-            try {
-                hitBall();
-            } catch (InterruptedException ex) {
-                ex.printStackTrace();
-            }
+            ping.join();
+            pong.join();
+        } catch (InterruptedException e) {
+            e.printStackTrace();
+        } finally {
+            System.out.println("Done!");
         }
     }
-
-    /**
-     * Hit the ball back to the opponent.
-     * */
-    protected abstract void hitBall() throws InterruptedException;
 }
