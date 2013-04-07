@@ -102,7 +102,7 @@ class Pingpong implements Runnable {
         Pingpong pong = new Pingpong(Player.PONG, 3, turn, ball);
         ExecutorService game = Executors.newFixedThreadPool(2);
 
-        System.out.println("Ready... Set... Go!");
+        System.out.println("Ready... Set... Go!\n");
         game.execute(ping);
         game.execute(pong);
 
