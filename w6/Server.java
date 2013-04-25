@@ -15,7 +15,23 @@
  * Connect to the server with telnet:
  * telnet localhost 8080
  *
+ * --- Windows ----
  * If you are using PuTTY, make sure "type" is set to "raw".
+ *
+ * ---- Mac ----
+ * If you are on a Mac, then you can input CR and LF characters by first escaping the command
+ * with "CTRL-V". So for example, CTRL+V+CTRL+J will give you a LF character.
+ *
+ * CR (^M): Ctrl+V, Ctrl+M
+ * LF (^J): Ctrl+V, Ctrl+J
+ * CR/LF (^M^J): Ctrl+V,Ctrl+M,Ctrl+V,Ctrl+J
+ *----
+
+ * On the forums I saw some discussion about using some of Netty's encoders & decoders. I tried
+ * that and the behaviour ended up being slightly off of what I would expect from an echo server
+ * (i.e. it generally does echo but the delimiter detection is not perfect in all environments).
+ * Anyway, if I am misinterpreting that bit slightly then please educate me in the comments but
+ * keep in mind that nitpicking over that piece is not even remotely the goal of the assignment.
  * */
 import java.util.concurrent.*;
 import java.net.InetSocketAddress;
@@ -70,24 +86,13 @@ public class Server {
 
         ServerBootstrap bootstrap = new ServerBootstrap(factory);
 
-        // Upstream: from client -> build frames -> decode frame -> handle messages
-        // Downstream: from handlers -> encode messages -> to client
         bootstrap.setPipelineFactory(new ChannelPipelineFactory() {
-            private final int MAX_FRAME_LENGTH = 8192;
-
             public ChannelPipeline getPipeline() {
                 ChannelPipeline pipeline = Channels.pipeline();
-                pipeline.addLast("framer", new DelimiterBasedFrameDecoder(
-                        MAX_FRAME_LENGTH, Delimiters.lineDelimiter()));
-                pipeline.addLast("decoder", new StringDecoder(CharsetUtil.UTF_8));
-                pipeline.addLast("encoder", new StringEncoder(CharsetUtil.UTF_8));
                 pipeline.addLast("handler", new EchoServerHandler());
                 return pipeline;
             }
         });
-
-        //bootstrap.setOption("child.tcpNoDelay", true);
-        //bootstrap.setOption("child.keepAlive", true);
 
         // start accepting connections on the desired port
         bootstrap.bind(new InetSocketAddress(port));
@@ -101,6 +106,7 @@ public class Server {
     static class EchoServerHandler extends SimpleChannelHandler {
         @Override
         public void messageReceived(ChannelHandlerContext ctx, MessageEvent e) {
+            // simply send the message back
             Channel ch = e.getChannel();
             ch.write(e.getMessage());
         }
