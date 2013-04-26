@@ -32,6 +32,9 @@
  * (i.e. it generally does echo but the delimiter detection is not perfect in all environments).
  * Anyway, if I am misinterpreting that bit slightly then please educate me in the comments but
  * keep in mind that nitpicking over that piece is not even remotely the goal of the assignment.
+ *
+ * Also this comment from Prof. Schmidt clarifies this point re: chunks/lines etc:
+ * https://class.coursera.org/posa-001/forum/thread?thread_id=687&post_id=3333#comment-2549
  * */
 import java.util.concurrent.*;
 import java.net.InetSocketAddress;
